@@ -1,6 +1,9 @@
+//go:build lightspark
+
 package handler
 
 import (
+	"context"
 	"encoding/hex"
 	"math/rand/v2"
 	"testing"
@@ -18,6 +21,34 @@ import (
 	"github.com/lightsparkdev/spark/so/ent"
 	st "github.com/lightsparkdev/spark/so/ent/schema/schematype"
 )
+
+func createTestTreeNodeAvailable(
+	t *testing.T,
+	ctx context.Context,
+	client *ent.Client,
+	tree *ent.Tree,
+	keyshare *ent.SigningKeyshare,
+	ownerIdentityPubKey, ownerSigningPubKey, verifyingPubKey keys.Public,
+) *ent.TreeNode {
+	validTx := createOldBitcoinTxBytes(t, ownerIdentityPubKey)
+	leaf, err := client.TreeNode.Create().
+		SetStatus(st.TreeNodeStatusAvailable).
+		SetTree(tree).
+		SetSigningKeyshare(keyshare).
+		SetValue(1000).
+		SetVerifyingPubkey(verifyingPubKey.Serialize()).
+		SetOwnerIdentityPubkey(ownerIdentityPubKey.Serialize()).
+		SetOwnerSigningPubkey(ownerSigningPubKey.Serialize()).
+		SetRawTx(validTx).
+		SetRawRefundTx(validTx).
+		SetDirectTx(validTx).
+		SetDirectRefundTx(validTx).
+		SetDirectFromCpfpRefundTx(validTx).
+		SetVout(0).
+		Save(ctx)
+	require.NoError(t, err)
+	return leaf
+}
 
 func createValidTaprootSignature(t *testing.T, ownerIdentityPrivKey keys.Private, spendTxHash []byte) []byte {
 	taprootKey := txscript.TweakTaprootPrivKey(*ownerIdentityPrivKey.ToBTCEC(), []byte{})
