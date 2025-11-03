@@ -70,7 +70,8 @@ func NewTestContext(tb testing.TB, driver string, path string) (context.Context,
 	dbSession := NewDefaultSessionFactory(dbClient).NewSession(tb.Context())
 	tc := &TestContext{t: tb, Client: dbClient, Session: dbSession, databasePath: path}
 	tb.Cleanup(tc.close)
-	return ent.Inject(tb.Context(), dbSession), tc
+	ctx := ent.Inject(tb.Context(), dbSession)
+	return ent.InjectClient(ctx, dbClient), tc
 }
 
 const sqlitePath = "file:ent?mode=memory&_fk=1"
@@ -80,7 +81,8 @@ func NewTestSQLiteContext(tb testing.TB) (context.Context, *TestContext) {
 	session := NewSession(tb.Context(), dbClient)
 	tc := &TestContext{t: tb, Client: dbClient, Session: session, databasePath: sqlitePath}
 	tb.Cleanup(tc.close)
-	return ent.Inject(tb.Context(), session), tc
+	ctx := ent.Inject(tb.Context(), session)
+	return ent.InjectClient(ctx, dbClient), tc
 }
 
 func NewTestSQLiteClient(tb testing.TB) *ent.Client {
@@ -172,7 +174,8 @@ func ConnectToTestPostgres(t testing.TB) (context.Context, *TestContext) {
 	session := NewSession(ctx, client)
 	tc := &TestContext{t: t, Client: client, Session: session, databasePath: dbConn.URL()}
 	t.Cleanup(tc.close)
-	return ent.Inject(ctx, session), tc
+	ctx = ent.Inject(ctx, session)
+	return ent.InjectClient(ctx, client), tc
 }
 
 var moduleRoot = filepath.Join(findModuleRoot(), "so/ent/migrate/migrations")

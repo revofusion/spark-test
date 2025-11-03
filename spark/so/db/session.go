@@ -322,6 +322,11 @@ func (s *Session) GetTxIfExists() *ent.Tx {
 	return s.currentTx
 }
 
+// Client returns the underlying ent client used for new transactions.
+func (s *Session) Client() *ent.Client {
+	return s.dbClient
+}
+
 func (s *Session) Notify(ctx context.Context, n ent.Notification) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

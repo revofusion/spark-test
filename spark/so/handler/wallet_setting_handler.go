@@ -153,12 +153,12 @@ func (h *WalletSettingHandler) IsPrivacyEnabled(ctx context.Context, identityPub
 		}
 	}
 
-	db, err := ent.GetDbFromContext(ctx)
+	client, err := ent.GetClientFromContext(ctx)
 	if err != nil {
-		return false, fmt.Errorf("failed to get database from context: %w", err)
+		return false, fmt.Errorf("failed to get ent client from context: %w", err)
 	}
 
-	walletSetting, err := db.WalletSetting.
+	walletSetting, err := client.WalletSetting.
 		Query().
 		Where(walletsetting.OwnerIdentityPublicKey(identityPublicKey)).
 		Only(ctx)

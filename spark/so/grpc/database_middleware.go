@@ -41,8 +41,9 @@ func DatabaseSessionMiddleware(dbClient *ent.Client, factory db.SessionFactory, 
 			opts...,
 		)
 
-		// Attach the transaction to the context
+		// Attach the transaction and client to the context
 		ctx = ent.Inject(ctx, session)
+		ctx = ent.InjectClient(ctx, session.Client())
 		ctx = ent.InjectNotifier(ctx, session)
 
 		// Ensure rollback on panic

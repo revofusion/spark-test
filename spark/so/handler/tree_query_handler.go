@@ -26,6 +26,31 @@ type TreeQueryHandler struct {
 	config *so.Config
 }
 
+type treeQueryReadStore interface {
+	TreeNodes() *ent.TreeNodeQuery
+	DepositAddresses() *ent.DepositAddressQuery
+}
+
+type treeQueryReadClient struct {
+	client *ent.Client
+}
+
+func newTreeQueryReadStore(ctx context.Context) (treeQueryReadStore, error) {
+	client, err := ent.GetClientFromContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get ent client from context: %w", err)
+	}
+	return treeQueryReadClient{client: client}, nil
+}
+
+func (t treeQueryReadClient) TreeNodes() *ent.TreeNodeQuery {
+	return t.client.TreeNode.Query()
+}
+
+func (t treeQueryReadClient) DepositAddresses() *ent.DepositAddressQuery {
+	return t.client.DepositAddress.Query()
+}
+
 // NewTreeQueryHandler creates a new TreeQueryHandler.
 func NewTreeQueryHandler(config *so.Config) *TreeQueryHandler {
 	return &TreeQueryHandler{config: config}
@@ -33,12 +58,12 @@ func NewTreeQueryHandler(config *so.Config) *TreeQueryHandler {
 
 // QueryNodes queries the details of nodes given either the owner identity public key or a list of node ids.
 func (h *TreeQueryHandler) QueryNodes(ctx context.Context, req *pb.QueryNodesRequest, isSSP bool) (*pb.QueryNodesResponse, error) {
-	db, err := ent.GetDbFromContext(ctx)
+	store, err := newTreeQueryReadStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create current tx for request: %w", err)
+		return nil, err
 	}
 
-	query := db.TreeNode.Query()
+	query := store.TreeNodes()
 	limit := int(req.GetLimit())
 	offset := int(req.GetOffset())
 
@@ -140,7 +165,7 @@ func (h *TreeQueryHandler) QueryNodes(ctx context.Context, req *pb.QueryNodesReq
 			return nil, fmt.Errorf("unable to marshal node %s: %w", node.ID.String(), err)
 		}
 		if req.IncludeParents {
-			err := getAncestorChain(ctx, db, node, protoNodeMap, isSSP)
+			err := getAncestorChain(ctx, node, protoNodeMap, isSSP)
 			if err != nil {
 				return nil, err
 			}
@@ -159,9 +184,9 @@ func (h *TreeQueryHandler) QueryNodes(ctx context.Context, req *pb.QueryNodesReq
 }
 
 func (h *TreeQueryHandler) QueryBalance(ctx context.Context, req *pb.QueryBalanceRequest) (*pb.QueryBalanceResponse, error) {
-	db, err := ent.GetDbFromContext(ctx)
+	store, err := newTreeQueryReadStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create current tx for request: %w", err)
+		return nil, err
 	}
 
 	var network st.Network
@@ -191,7 +216,7 @@ func (h *TreeQueryHandler) QueryBalance(ctx context.Context, req *pb.QueryBalanc
 		}
 	}
 
-	nodes, err := db.TreeNode.Query().
+	nodes, err := store.TreeNodes().
 		Where(treenode.HasTreeWith(tree.NetworkEQ(network))).
 		Where(treenode.StatusEQ(st.TreeNodeStatusAvailable)).
 		Where(treenode.OwnerIdentityPubkey(identityPubKey)).
@@ -213,7 +238,7 @@ func (h *TreeQueryHandler) QueryBalance(ctx context.Context, req *pb.QueryBalanc
 	}, nil
 }
 
-func getAncestorChain(ctx context.Context, db *ent.Tx, node *ent.TreeNode, nodeMap map[string]*pb.TreeNode, isSSP bool) error {
+func getAncestorChain(ctx context.Context, node *ent.TreeNode, nodeMap map[string]*pb.TreeNode, isSSP bool) error {
 	parent, err := node.QueryParent().Only(ctx)
 	if err != nil {
 		if !ent.IsNotFound(err) {
@@ -245,20 +270,20 @@ func getAncestorChain(ctx context.Context, db *ent.Tx, node *ent.TreeNode, nodeM
 		return fmt.Errorf("unable to marshal node %s: %w", parent.ID.String(), err)
 	}
 
-	return getAncestorChain(ctx, db, parent, nodeMap, isSSP)
+	return getAncestorChain(ctx, parent, nodeMap, isSSP)
 }
 
 func (h *TreeQueryHandler) QueryUnusedDepositAddresses(ctx context.Context, req *pb.QueryUnusedDepositAddressesRequest) (*pb.QueryUnusedDepositAddressesResponse, error) {
-	db, err := ent.GetDbFromContext(ctx)
+	store, err := newTreeQueryReadStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create current tx for request: %w", err)
+		return nil, err
 	}
 
 	idPubKey, err := keys.ParsePublicKey(req.GetIdentityPublicKey())
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse identity public key: %w", err)
 	}
-	query := db.DepositAddress.Query().
+	query := store.DepositAddresses().
 		Where(depositaddress.OwnerIdentityPubkey(idPubKey)).
 		// Exclude static deposit addresses, because they always can be used,
 		// whereas express deposit addresses can be used only once
@@ -302,7 +327,7 @@ func (h *TreeQueryHandler) QueryUnusedDepositAddresses(ctx context.Context, req 
 
 	var unusedDepositAddresses []*pb.DepositAddressQueryResult
 	for _, depositAddress := range depositAddresses {
-		treeNodes, err := db.TreeNode.Query().Where(treenode.HasSigningKeyshareWith(signingkeyshare.ID(depositAddress.Edges.SigningKeyshare.ID))).All(ctx)
+		treeNodes, err := store.TreeNodes().Where(treenode.HasSigningKeyshareWith(signingkeyshare.ID(depositAddress.Edges.SigningKeyshare.ID))).All(ctx)
 		if len(treeNodes) == 0 || ent.IsNotFound(err) {
 			verifyingPublicKey := depositAddress.OwnerSigningPubkey.Add(depositAddress.Edges.SigningKeyshare.PublicKey)
 			nodeIDStr := depositAddress.NodeID.String()
@@ -329,9 +354,9 @@ func (h *TreeQueryHandler) QueryUnusedDepositAddresses(ctx context.Context, req 
 }
 
 func (h *TreeQueryHandler) QueryStaticDepositAddresses(ctx context.Context, req *pb.QueryStaticDepositAddressesRequest) (*pb.QueryStaticDepositAddressesResponse, error) {
-	db, err := ent.GetDbFromContext(ctx)
+	store, err := newTreeQueryReadStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create current tx for request: %w", err)
+		return nil, err
 	}
 
 	limit := int(req.GetLimit())
@@ -347,7 +372,7 @@ func (h *TreeQueryHandler) QueryStaticDepositAddresses(ctx context.Context, req 
 	if err != nil {
 		return nil, fmt.Errorf("unable to parse identity public key: %w", err)
 	}
-	query := db.DepositAddress.Query().
+	query := store.DepositAddresses().
 		Where(depositaddress.OwnerIdentityPubkey(idPubKey)).
 		Where(depositaddress.IsStatic(true)).
 		Order(ent.Desc(depositaddress.FieldID)).
@@ -425,9 +450,9 @@ func (h *TreeQueryHandler) depositAddressToQueryResult(ctx context.Context, depo
 }
 
 func (h *TreeQueryHandler) QueryNodesDistribution(ctx context.Context, req *pb.QueryNodesDistributionRequest) (*pb.QueryNodesDistributionResponse, error) {
-	db, err := ent.GetDbFromContext(ctx)
+	store, err := newTreeQueryReadStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create current tx for request: %w", err)
+		return nil, err
 	}
 
 	type Result struct {
@@ -441,7 +466,7 @@ func (h *TreeQueryHandler) QueryNodesDistribution(ctx context.Context, req *pb.Q
 	}
 
 	var results []Result
-	err = db.TreeNode.Query().
+	err = store.TreeNodes().
 		Where(
 			treenode.OwnerIdentityPubkey(ownerIdentityPubKey),
 			treenode.StatusEQ(st.TreeNodeStatusAvailable),
@@ -462,9 +487,9 @@ func (h *TreeQueryHandler) QueryNodesDistribution(ctx context.Context, req *pb.Q
 }
 
 func (h *TreeQueryHandler) QueryNodesByValue(ctx context.Context, req *pb.QueryNodesByValueRequest) (*pb.QueryNodesByValueResponse, error) {
-	db, err := ent.GetDbFromContext(ctx)
+	store, err := newTreeQueryReadStore(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get or create current tx for request: %w", err)
+		return nil, err
 	}
 
 	limit := int(req.GetLimit())
@@ -496,7 +521,7 @@ func (h *TreeQueryHandler) QueryNodesByValue(ctx context.Context, req *pb.QueryN
 		}
 	}
 
-	nodes, err := db.TreeNode.Query().
+	nodes, err := store.TreeNodes().
 		Where(
 			treenode.OwnerIdentityPubkey(ownerIdentityPubKey),
 			treenode.StatusEQ(st.TreeNodeStatusAvailable),

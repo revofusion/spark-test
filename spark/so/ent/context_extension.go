@@ -9,10 +9,12 @@ import (
 // contextKey is a type for context keys.
 type txProviderContextKey string
 type notifierContextKey string
+type clientContextKey string
 
 // txProviderKey is the context key for the transaction provider.
 const txProviderKey txProviderContextKey = "txProvider"
 const notifierKey notifierContextKey = "notifier"
+const clientKey clientContextKey = "entClient"
 
 // A TxProvider is an interface that provides a method to either get an existing transaction,
 // or begin a new transaction if none exists.
@@ -44,6 +46,12 @@ func Inject(ctx context.Context, txProvider TxProvider) context.Context {
 	return context.WithValue(ctx, txProviderKey, txProvider)
 }
 
+// InjectClient stores the ent client on the context so callers can opt into read-only access
+// without forcing a transaction to begin.
+func InjectClient(ctx context.Context, client *Client) context.Context {
+	return context.WithValue(ctx, clientKey, client)
+}
+
 // GetDbFromContext returns the database transaction from the context.
 func GetDbFromContext(ctx context.Context) (*Tx, error) {
 	if txProvider, ok := ctx.Value(txProviderKey).(TxProvider); ok {
@@ -51,6 +59,14 @@ func GetDbFromContext(ctx context.Context) (*Tx, error) {
 	}
 
 	return nil, fmt.Errorf("no transaction provider found in context")
+}
+
+// GetClientFromContext returns the ent client attached to the context.
+func GetClientFromContext(ctx context.Context) (*Client, error) {
+	if client, ok := ctx.Value(clientKey).(*Client); ok && client != nil {
+		return client, nil
+	}
+	return nil, fmt.Errorf("no ent client found in context")
 }
 
 // DbCommit gets the transaction from the context and commits it.
