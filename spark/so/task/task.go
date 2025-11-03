@@ -59,7 +59,7 @@ var (
 type Task func(context.Context, *so.Config) error
 
 // BaseTaskSpec is a task that is scheduled to run.
-type BaseTaskSpec struct { //nolint:revive
+type BaseTaskSpec struct {
 	// Name is the human-readable name of the task.
 	Name string
 	// Timeout is the maximum time the task is allowed to run before it will be cancelled.
@@ -1041,7 +1041,7 @@ func (t *BaseTaskSpec) getTimeout() time.Duration {
 func (t *BaseTaskSpec) RunOnce(ctx context.Context, config *so.Config, dbClient *ent.Client, knobsService knobs.Knobs) error {
 	wrappedTask := t.chainMiddleware(
 		LogMiddleware(),
-		DatabaseMiddleware(db.NewDefaultSessionFactory(dbClient), config.Database.NewTxTimeout),
+		DatabaseMiddleware(db.NewDefaultSessionFactory(dbClient, knobsService), config.Database.NewTxTimeout),
 		TimeoutMiddleware(),
 		PanicRecoveryMiddleware(),
 	)
@@ -1052,7 +1052,7 @@ func (t *BaseTaskSpec) RunOnce(ctx context.Context, config *so.Config, dbClient 
 func (t *ScheduledTaskSpec) Schedule(scheduler gocron.Scheduler, config *so.Config, dbClient *ent.Client, knobsService knobs.Knobs) error {
 	wrappedTask := t.chainMiddleware(
 		LogMiddleware(),
-		DatabaseMiddleware(db.NewDefaultSessionFactory(dbClient), config.Database.NewTxTimeout),
+		DatabaseMiddleware(db.NewDefaultSessionFactory(dbClient, knobsService), config.Database.NewTxTimeout),
 		TimeoutMiddleware(),
 		PanicRecoveryMiddleware(),
 	)
